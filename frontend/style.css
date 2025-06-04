@@ -1,0 +1,17 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+#root {
+    width: 100vw;
+    height: 100vh;
+}
+
+/* ReactFlow specific styles (if any needed beyond the default) */
+.react-flow__attribution {
+    background: rgba(255, 255, 255, 0.5);
+}
