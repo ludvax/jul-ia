@@ -1,6 +1,6 @@
 module ExecutionEngine
 
-# UUIDs and DataStructures are expected to be available from the parent JulAI.Core module.
+# UUIDs and DataStructures are expected to be available from the parent JulIA.Core module.
 # Workflow, Node, Edge structs are now from DomainModels.
 using ..DomainModels
 # AbstractNode and its concrete types (WebhookNode, TransformDataNode) and their execute methods.

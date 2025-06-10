@@ -1,6 +1,6 @@
 module DomainModels
 
-# UUIDs and Dates are expected to be available from the parent JulAI.Core module.
+# UUIDs and Dates are expected to be available from the parent JulIA.Core module.
 
 export Node, Edge, Workflow # Export the structs so they can be used by other modules
 

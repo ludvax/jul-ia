@@ -1,5 +1,5 @@
-# src/JulAI.jl
-module JulAI
+# src/JulIA.jl
+module JulIA
 
 # --- Core Module ---
 module Core
@@ -9,12 +9,12 @@ module Core
     using DataStructures # For ExecutionEngine
 
     # Order matters if files depend on each other's definitions within Core
-    include("Core/DomainModels.jl") # Defines Workflow, Node, Edge structs
-    include("Core/Nodes.jl")        # Defines AbstractNode, WebhookNode, TransformDataNode, execute for them
-    include("Core/ExecutionEngine.jl") # Defines ExecutionContext, execute_workflow, helpers
-    include("Core/SandboxManager.jl")  # Defines UserCodeSandbox
+    include("JulIA/Core/DomainModels.jl") # Defines Workflow, Node, Edge structs
+    include("JulIA/Core/Nodes.jl")        # Defines AbstractNode, WebhookNode, TransformDataNode, execute for them
+    include("JulIA/Core/ExecutionEngine.jl") # Defines ExecutionContext, execute_workflow, helpers
+    include("JulIA/Core/SandboxManager.jl")  # Defines UserCodeSandbox
 
-    # Export from Core to make them accessible as JulAI.Core.XYZ
+    # Export from Core to make them accessible as JulIA.Core.XYZ
     export DomainModels, Nodes, ExecutionEngine, SandboxManager
     # Or export specific structs/functions if preferred for a flatter API from Core
     # e.g., export Workflow, Node, Edge, AbstractNode, WebhookNode, TransformDataNode,
@@ -34,7 +34,7 @@ module Application
                                  # and potentially execute_workflow if called from Application layer
     using ..Core.Nodes # If Application layer manipulates AbstractNode instances directly
 
-    include("Application/WorkflowService.jl") # Defines WorkflowService module
+    include("JulIA/Application/WorkflowService.jl") # Defines WorkflowService module
 
     export WorkflowService
 end # module Application
@@ -60,7 +60,7 @@ module Web
     using ..Core.ExecutionEngine # For execute_workflow and ExecutionContext
     using ..Application.WorkflowService # For CRUD operations on workflows
 
-    include("Web/APIController.jl") # Defines APIController module and its routes
+    include("JulIA/Web/APIController.jl") # Defines APIController module and its routes
 
     # Typically, you might not export APIController itself, but ensure its routes are loaded
     # and Genie server is started. For now, exporting it is fine for structure.
@@ -75,7 +75,7 @@ end # module Web
 
 function julia_main()::Cint
     try
-        println("JulAI Application: Initializing modules...")
+        println("JulIA Application: Initializing modules...")
         # This structure implies that Genie routes are defined when APIController.jl is included.
         # To start the server, one might call a function from Web or Web.APIController.
         # For example, if APIController had a function like `function start_server() Genie.startup() end`
@@ -85,7 +85,7 @@ function julia_main()::Cint
         # This will fail if modules are not exporting these or if paths are wrong.
         # println("Testing module access: \$(Core.DomainModels.Workflow)")
         # println("Testing API controller access: \$(Web.APIController)")
-        println("JulAI modules structured. Further setup (like starting Genie) would go here or be called from here.")
+        println("JulIA modules structured. Further setup (like starting Genie) would go here or be called from here.")
 
     catch err
         Base.showerror(stderr, err)
@@ -95,8 +95,8 @@ function julia_main()::Cint
     return 0
 end
 
-# Export key modules if you want `using JulAI` to bring them into scope,
+# Export key modules if you want `using JulIA` to bring them into scope,
 # or specific functionalities.
 export Core, Application, Web, Infrastructure, julia_main
 
-end # module JulAI
+end # module JulIA

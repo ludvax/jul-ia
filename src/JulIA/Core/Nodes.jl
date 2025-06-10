@@ -1,11 +1,11 @@
 module Nodes
 
 # ExecutionContext is expected to be available from the ExecutionEngine module,
-# which is a sibling module within JulAI.Core.
+# which is a sibling module within JulIA.Core.
 using ..ExecutionEngine: ExecutionContext
 # UserCodeSandbox is needed for ConditionalNode's condition_code execution.
 using ..SandboxManager.UserCodeSandbox
-# Note: UUIDs and Dates are available from JulAI.Core's own `using` statements.
+# Note: UUIDs and Dates are available from JulIA.Core's own `using` statements.
 
 export AbstractNode, WebhookNode, TransformDataNode, ConditionalNode, execute
 
