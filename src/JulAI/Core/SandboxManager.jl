@@ -1,13 +1,21 @@
 module SandboxManager
 
-using ..MyWorkflowApp.ExecutionEngine: ExecutionContext
-using ..MyWorkflowApp.Workflows
-using UUIDs
+# UUIDs is expected to be available from the parent JulAI.Core module.
+# ExecutionContext is from ExecutionEngine module.
+using ..ExecutionEngine: ExecutionContext
+# Workflow (and Node, Edge) types are from DomainModels module.
+using ..DomainModels
 
 export UserCodeSandbox
 
 module UserCodeSandbox
-    using ..MyWorkflowApp.ExecutionEngine: ExecutionContext
+    # ExecutionContext is now available via SandboxManager's import from ..ExecutionEngine
+    # or directly if needed via ..ExecutionEngine: ExecutionContext (relative to SandboxManager)
+    # To be precise, since SandboxManager is a sibling of ExecutionEngine,
+    # UserCodeSandbox (submodule of SandboxManager) would use:
+    using ..ExecutionEngine: ExecutionContext
+    # This assumes that JulAI.Core includes SandboxManager.jl and ExecutionEngine.jl,
+    # making them siblings.
 
     global input_data = nothing
     global workflow_context = nothing
