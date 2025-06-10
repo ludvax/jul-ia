@@ -1,7 +1,6 @@
-module Workflows
+module DomainModels
 
-using UUIDs
-using Dates
+# UUIDs and Dates are expected to be available from the parent JulAI.Core module.
 
 export Node, Edge, Workflow # Export the structs so they can be used by other modules
 
@@ -31,4 +30,4 @@ struct Workflow
     updated_at::DateTime
 end
 
-end # module Workflows
+end # module DomainModels
