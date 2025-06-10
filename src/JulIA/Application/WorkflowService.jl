@@ -3,7 +3,7 @@ module WorkflowService
 using JSON3 # Directly used for JSON3.write/read.
 
 # Note: UUIDs, Dates, and Core module types (Workflow, Node, Edge) are expected to be
-# available from the parent JulAI.Application module's scope, as defined in JulAI.jl.
+# available from the parent JulIA.Application module's scope, as defined in JulIA.jl.
 # No explicit `using ..Core.DomainModels` needed here if that's the case.
 
 export save_workflow_to_string, load_workflow_from_string, save_workflow_to_file, load_workflow_from_file, list_workflow_files

@@ -1,7 +1,7 @@
 module APIController
 
 # All necessary `using` statements (Genie, UUIDs, Dates, Core modules, Application modules)
-# are expected to be handled by the parent `JulAI.Web` module, as defined in `JulAI.jl`.
+# are expected to be handled by the parent `JulIA.Web` module, as defined in `JulIA.jl`.
 # This keeps APIController.jl focused on route definitions and controller logic.
 
 # --- Workflow API Routes ---
