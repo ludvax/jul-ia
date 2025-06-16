@@ -1,138 +1,121 @@
 module APIController
 
-# All necessary `using` statements (Genie, UUIDs, Dates, Core modules, Application modules)
-# are expected to be handled by the parent `JulIA.Web` module, as defined in `JulIA.jl`.
-# This keeps APIController.jl focused on route definitions and controller logic.
+# Dependencies from JulIA.Web parent scope: Genie (Router, Requests, Renderer.Json), UUIDs, Dates
+# Explicit using for modules specific to this controller's new MVP logic:
+using ..Core.MVPWorkflowModels
+using ..Infrastructure.MVPWorkflowPersistence
+using ..Core.ExecutionEngine # Still needed for execute_mvp_workflow
+using JSON3 # For JSON3.isvalid and direct parsing if needed. Genie.Requests.jsonpayload() also uses it.
 
-# --- Workflow API Routes ---
+# --- MVP Database Setup ---
+const MVP_DB_PATH = "mvp_workflows.sqlite" # Or make it configurable
+try
+    MVPWorkflowPersistence.init_db(MVP_DB_PATH)
+    @info "MVP Workflow Database initialized at: $(MVP_DB_PATH)"
+catch e
+    @error "Failed to initialize MVP Workflow Database!" exception=(e, catch_backtrace())
+    # Depending on policy, might rethrow or exit if DB is critical.
+    # For now, server will start but DB operations might fail.
+end
+
+# --- Workflow API Routes (Adapted for MVP) ---
 
 # GET /api/workflows - List all workflows
 route("/api/workflows", method = GET) do
     try
-        workflows_list = WorkflowService.list_workflow_files()
-        return json(workflows_list)
+        workflows = MVPWorkflowPersistence.list_workflows(MVP_DB_PATH)
+        return json(workflows)
     catch e
-        @error "Failed to list workflows" exception=(e, catch_backtrace())
-        # Ensure Genie.Renderer.Json is imported for json()
-        # Ensure Genie.HTTPUtils.set_status_code is available or handle status differently if needed.
-        # For Genie, returning a Dict with an :error key and setting status in json() is common.
-        # response_code = 500 # Internal Server Error
-        # return json(Dict("error" => "Failed to retrieve workflows.", "details" => sprint(showerror, e)), status = response_code)
-        # Simpler error for now if set_status_code is not directly used or available:
+        @error "Failed to list MVP workflows" exception=(e, catch_backtrace())
         return json(Dict("error" => "Failed to retrieve workflows: " * sprint(showerror, e)), status = 500)
     end
 end
 
-# GET /api/workflows/:id::UUID - Get a specific workflow
-route("/api/workflows/:id::UUID", method = GET) do
-    workflow_id = params(:id) # params() returns string, Genie auto-parses to UUID for route matching
-    workflow_id = params(:id)::UUID # params(:id) is already a UUID due to ::UUID in route definition
+# GET /api/workflows/:id::String - Get a specific workflow
+route("/api/workflows/:id::String", method = GET) do # Changed to :id::String
     try
-        loaded_workflow = WorkflowService.load_workflow_from_file(workflow_id)
+        workflow_id_str = params(:id) # Already a string
+        details = MVPWorkflowPersistence.load_workflow_details(MVP_DB_PATH, workflow_id_str)
 
-        if !isnothing(loaded_workflow)
-            return json(loaded_workflow)
+        if !isnothing(details)
+            # Return name, description, and the full JSON definition string
+            return json(Dict(
+                "id" => details.id,
+                "name" => details.name,
+                "description" => details.description,
+                "json_definition" => details.json_definition, # Send the raw JSON string
+                "created_at" => details.created_at
+            ))
         else
-            return json(Dict("error" => "Workflow with ID: $workflow_id not found."), status = 404)
+            return json(Dict("error" => "MVP Workflow with ID: $workflow_id_str not found."), status = 404)
         end
     catch e
-        # Log the error with workflow_id for context
-        @error "Failed to retrieve workflow $workflow_id" exception=(e, catch_backtrace())
-        return json(Dict("error" => "Server error while retrieving workflow: " * sprint(showerror, e)), status = 500)
+        @error "Failed to retrieve MVP workflow $workflow_id_str" exception=(e, catch_backtrace())
+        return json(Dict("error" => "Failed to retrieve workflow: " * sprint(showerror, e)), status = 500)
     end
 end
 
 # POST /api/workflows - Create a new workflow
 route("/api/workflows", method = POST) do
-    payload = jsonpayload() # Genie function to get JSON payload as Dict/Array
-    local temp_workflow_for_nodes_edges::Workflow
     try
-        raw_body = Genie.Requests.rawpayload()
-        if isempty(raw_body)
-            return json(Dict("error" => "Request body is empty."), status = 400)
-        end
-        # This parses name, nodes, edges from payload.
-        # It might also parse id, created_at, updated_at if client sends them, but we'll override those.
-        temp_workflow_for_nodes_edges = JSON3.read(raw_body, Workflow)
+        payload_dict = jsonpayload() # Reads JSON body into a Dict. Relies on Content-Type: application/json.
+        name = get(payload_dict, "name", "Untitled MVP Workflow")
+        description = get(payload_dict, "description", "")
 
-        # Basic validation after parsing
-        if !isdefined(temp_workflow_for_nodes_edges, :name) || isempty(temp_workflow_for_nodes_edges.name)
-             return json(Dict("error" => "Field 'name' is missing or empty in workflow payload."), status = 400)
-        end
-        if !isdefined(temp_workflow_for_nodes_edges, :nodes) # Assuming empty nodes array is acceptable
-             return json(Dict("error" => "Field 'nodes' is missing in workflow payload."), status = 400)
-        end
-        if !isdefined(temp_workflow_for_nodes_edges, :edges) # Assuming empty edges array is acceptable
-             return json(Dict("error" => "Field 'edges' is missing in workflow payload."), status = 400)
+        # For MVP, we expect the full workflow definition (nodes, connections) in the payload.
+        # We'll save the raw JSON string of the *entire payload* as the definition.
+        raw_json_payload = Genie.Requests.rawpayload()
+
+        if isempty(raw_json_payload) || !JSON3.isvalid(raw_json_payload)
+             return json(Dict("error" => "Request body is empty or not valid JSON."), status = 400)
         end
 
-    catch ex
-        @error "Error processing POST /api/workflows payload: " exception=(ex, catch_backtrace())
-        return json(Dict("error" => "Invalid JSON payload or structure for Workflow.", "details" => sprint(showerror, ex)), status = 400)
-    end
+        # Optional: Validate if it can be parsed into our MVPWorkflow structure.
+        # try
+        #     MVPWorkflowModels.parse_mvp_workflow_json(raw_json_payload)
+        # catch parse_err
+        #     @warn "MVP Workflow JSON validation failed during create" exception=(parse_err, catch_backtrace())
+        #     return json(Dict("error" => "Invalid workflow structure in JSON payload.", "details" => sprint(showerror, parse_err)), status = 400)
+        # end
 
-    # If parsing name, nodes, edges from temp_workflow_for_nodes_edges was successful:
-    new_id = uuid4()
-    time_now = now(UTC)
+        new_id = string(uuid4()) # Generate ID here using UUIDs from parent scope
+        save_success = MVPWorkflowPersistence.save_workflow(MVP_DB_PATH, new_id, name, description, raw_json_payload)
 
-    # Construct the final workflow object with server-generated ID and timestamps
-    # and data from the (partially) parsed payload
-    final_workflow = Workflow(
-        new_id,
-        temp_workflow_for_nodes_edges.name, # Name from payload
-        temp_workflow_for_nodes_edges.nodes,  # Nodes from payload
-        temp_workflow_for_nodes_edges.edges,  # Edges from payload
-        time_now, # Server-set created_at
-        time_now  # Server-set updated_at
-    )
-
-    try
-        save_success = WorkflowService.save_workflow_to_file(final_workflow)
         if save_success
-            # Return the created workflow, now with server-set fields
-            return json(final_workflow, status = 201)
+            return json(Dict("id" => new_id, "name" => name, "description" => description, "message" => "Workflow saved successfully."), status = 201)
         else
-            # This case might not be reached if save_workflow_to_file throws an error on failure
-            return json(Dict("error" => "Failed to save workflow due to an unspecified error."), status = 500)
+            return json(Dict("error" => "Failed to save workflow to database."), status = 500)
         end
     catch e
-        @error "Failed to save workflow" exception=(e, catch_backtrace())
-        return json(Dict("error" => "Server error while saving workflow.", "details" => sprint(showerror, e)), status = 500)
+        @error "Error processing POST /api/workflows for MVP" exception=(e, catch_backtrace())
+        # Check if JSON3.JSONException needs specific import or if it's a subtype of a general Exception
+        # For now, using a generic check. If JSON3 is used by jsonpayload, its exceptions might propagate.
+        return json(Dict("error" => "Invalid request or server error: " * sprint(showerror, e)), status = 500) # Simplified error status
     end
 end
 
-# POST /api/workflows/:id::UUID/execute - Execute a workflow
-route("/api/workflows/:id::UUID/execute", method = POST) do
-    workflow_id = params(:id)
-    workflow_id = params(:id)::UUID
+# POST /api/workflows/:id::String/execute - Execute a workflow
+route("/api/workflows/:id::String/execute", method = POST) do # Changed to :id::String
     try
-        loaded_workflow = WorkflowService.load_workflow_from_file(workflow_id)
+        workflow_id_str = params(:id)
+        workflow_details = MVPWorkflowPersistence.load_workflow_details(MVP_DB_PATH, workflow_id_str)
 
-        if isnothing(loaded_workflow)
-            return json(Dict("error" => "Workflow with ID: $workflow_id not found. Cannot execute."), status = 404)
+        if isnothing(workflow_details)
+            return json(Dict("error" => "MVP Workflow with ID: $workflow_id_str not found. Cannot execute."), status = 404)
         end
 
-        # Execute the workflow
-        execution_context = ExecutionEngine.execute_workflow(loaded_workflow)
+        json_definition = workflow_details.json_definition
+        # This parse step also validates the structure needed for execution
+        parsed_mvp_workflow = MVPWorkflowModels.parse_mvp_workflow_json(json_definition)
 
-        # Prepare response from execution_context
-        # (ExecutionContext struct has: workflow_id, run_id, data, logs, errors)
-        response_data = Dict(
-            "workflow_id" => execution_context.workflow_id,
-            "run_id" => execution_context.run_id,
-            "status" => isempty(execution_context.errors) ? "completed" : "failed",
-            "logs_count" => length(execution_context.logs),
-            "errors_count" => length(execution_context.errors),
-            # Optionally include final data or a summary if it's not too large
-            # "final_node_outputs" => execution_context.data
-        )
+        # MVP spec doesn't specify initial data via API, so pass empty Dict
+        # execute_mvp_workflow is from Core.ExecutionEngine, available via JulIA.Web's using statement
+        execution_result = ExecutionEngine.execute_mvp_workflow(parsed_mvp_workflow, Dict{String,Any}())
 
-        return json(response_data)
+        return json(execution_result) # execute_mvp_workflow returns Dict with status and context
 
     catch e
-        # Log the error with stacktrace for server-side debugging
-        @error "Failed to execute workflow $workflow_id" exception=(e, catch_backtrace())
-        # Return a generic error message to the client
+        @error "Failed to execute MVP workflow $workflow_id_str" exception=(e, catch_backtrace())
         return json(Dict("error" => "Failed to execute workflow: " * sprint(showerror, e)), status = 500)
     end
 end

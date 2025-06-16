@@ -7,9 +7,13 @@ using ..DomainModels
 using ..Nodes
 # UserCodeSandbox for running user-defined functions.
 using ..SandboxManager.UserCodeSandbox
+# For MVP-specific workflow execution
+using ..MVPWorkflowModels # For MVPWorkflow, WorkflowNode structs
+using HTTP              # For the HTTP request node in MVP execution
+using JSON3             # For JSON handling in MVP HTTP POST node
 
 export ExecutionContext
-export execute_workflow # execute_node and its variants are removed
+export execute_workflow, execute_mvp_workflow # execute_node and its variants are removed
 export determine_execution_order, find_node_by_id, prepare_node_inputs
 
 # Un contexte pour passer les données et l'état pendant l'exécution
@@ -296,3 +300,112 @@ function prepare_node_inputs(node::Node, workflow::Workflow, context::ExecutionC
 end
 
 end # module ExecutionEngine
+
+
+function execute_mvp_workflow(workflow::MVPWorkflow, initial_data::Dict{String, Any} = Dict{String,Any}())::Dict{String, Any}
+    # ExecutionContext here is the simple Dict, not the struct used by the other engine.
+    # We might want to use our existing ExecutionContext struct for logging consistency,
+    # but the MVP spec pseudo-code used a simple Dict. Let's follow MVP for now.
+    # For logging, we'll println directly as in the pseudo-code.
+
+    println("MVP Execution: Starting workflow: $(workflow.name)")
+
+    # Determine start node (MVP assumes one "jul_ai.trigger.start" node)
+    start_node_idx = findfirst(n -> n.type == "jul_ai.trigger.start", workflow.nodes)
+    if isnothing(start_node_idx)
+        println("MVP Execution ERROR: No 'jul_ai.trigger.start' node found in workflow '$(workflow.name)'.")
+        return Dict("status" => "failed", "error" => "No start node defined")
+    end
+    start_node_id = workflow.nodes[start_node_idx].id
+
+    current_node_id::Union{String, Nothing} = start_node_id
+    # This context is distinct from the ExecutionContext struct. It's for MVP's data passing.
+    mvp_execution_data = Dict{String, Any}(initial_data)
+    # Store previous node's direct output as per MVP spec
+    mvp_execution_data["previous_node_output"] = nothing
+
+    execution_successful = true
+
+    while current_node_id !== nothing
+        if !haskey(workflow.node_map, current_node_id)
+            println("MVP Execution ERROR: Node ID '$(current_node_id)' not found in node_map.")
+            execution_successful = false
+            break
+        end
+        current_node = workflow.node_map[current_node_id]
+        println("MVP Execution: Executing node: $(current_node.name) (Type: $(current_node.type), ID: $(current_node.id))")
+
+        node_output_data = nothing # Data part of the node's output
+
+        try
+            if current_node.type == "jul_ai.trigger.start"
+                println("  Node '$(current_node.name)': Started.")
+                node_output_data = "Workflow started successfully at node $(current_node.name)."
+
+            elseif current_node.type == "jul_ai.http.request"
+                method_str = get(current_node.parameters, "method", "GET")
+                url_str = get(current_node.parameters, "url", nothing)
+                headers_dict = get(current_node.parameters, "headers", Dict{String, String}())
+                body_val = get(current_node.parameters, "body", nothing) # Can be Dict or String for HTTP.jl
+
+                if isnothing(url_str)
+                    error("HTTP Request node '$(current_node.name)' is missing 'url' parameter.")
+                end
+
+                println("  Node '$(current_node.name)': Making $(method_str) request to $(url_str)")
+
+                local response # Ensure response is in the local scope of the try block
+
+                if uppercase(method_str) == "GET"
+                    response = HTTP.request("GET", url_str, headers_dict)
+                elseif uppercase(method_str) == "POST"
+                    if isa(body_val, Dict) && get(headers_dict, "Content-Type", "") == "application/json"
+                        response = HTTP.request("POST", url_str, headers_dict, JSON3.write(body_val))
+                    else # Assume string or other appropriate body type
+                        response = HTTP.request("POST", url_str, headers_dict, body_val)
+                    end
+                else
+                    error("Unsupported HTTP method: $(method_str) for node $(current_node.name)")
+                end
+
+                node_output_data = String(response.body)
+                println("  Node '$(current_node.name)': HTTP Response Status: $(response.status), Body: $(node_output_data)")
+
+            elseif current_node.type == "jul_ai.util.log"
+                message_template = get(current_node.parameters, "message", "")
+                # Simple substitution as per MVP spec
+                message_to_log = replace(message_template, "{{ previous_node_output }}" => string(mvp_execution_data["previous_node_output"]))
+                println("  LOG Node '$(current_node.name)': $(message_to_log)")
+                node_output_data = message_to_log
+            else
+                error("Unknown MVP node type: $(current_node.type) for node '$(current_node.name)'")
+            end
+
+            # Update context for the next node
+            mvp_execution_data["previous_node_output"] = node_output_data
+            # Could also store all node outputs by ID: mvp_execution_data[current_node.id] = node_output_data
+
+        catch e
+            println("MVP Execution ERROR at node '$(current_node.name)' (ID: $(current_node.id)): " * sprint(showerror, e))
+            # Record error for AI Core (conceptual for MVP)
+            mvp_execution_data["error_node_$(current_node.id)"] = sprint(showerror, e)
+            execution_successful = false
+            break # Stop workflow on first error for MVP
+        end
+
+        # Move to the next node (MVP: first connection from the current node's outgoing connections)
+        if haskey(workflow.graph, current_node_id) && !isempty(workflow.graph[current_node_id])
+            current_node_id = workflow.graph[current_node_id][1] # Take the first one
+        else
+            current_node_id = nothing # End of workflow path
+        end
+    end # while loop
+
+    if execution_successful
+        println("MVP Execution: Workflow '$(workflow.name)' completed successfully.")
+        return Dict("status" => "completed", "final_context" => mvp_execution_data)
+    else
+        println("MVP Execution: Workflow '$(workflow.name)' failed.")
+        return Dict("status" => "failed", "final_context" => mvp_execution_data)
+    end
+end
