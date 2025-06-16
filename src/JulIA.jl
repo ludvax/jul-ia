@@ -10,12 +10,13 @@ module Core
 
     # Order matters if files depend on each other's definitions within Core
     include("JulIA/Core/DomainModels.jl") # Defines Workflow, Node, Edge structs
+    include("JulIA/Core/MVPWorkflowModels.jl") # Defines MVP-specific workflow structs and parser
     include("JulIA/Core/Nodes.jl")        # Defines AbstractNode, WebhookNode, TransformDataNode, execute for them
     include("JulIA/Core/ExecutionEngine.jl") # Defines ExecutionContext, execute_workflow, helpers
     include("JulIA/Core/SandboxManager.jl")  # Defines UserCodeSandbox
 
     # Export from Core to make them accessible as JulIA.Core.XYZ
-    export DomainModels, Nodes, ExecutionEngine, SandboxManager
+    export DomainModels, MVPWorkflowModels, Nodes, ExecutionEngine, SandboxManager
     # Or export specific structs/functions if preferred for a flatter API from Core
     # e.g., export Workflow, Node, Edge, AbstractNode, WebhookNode, TransformDataNode,
     #               execute, ExecutionContext, execute_workflow, UserCodeSandbox
@@ -46,6 +47,8 @@ module Infrastructure
     # using ..Core.DomainModels
     # include("Infrastructure/PostgresPersistence.jl")
     # export PostgresPersistence
+    include("JulIA/Infrastructure/MVPWorkflowPersistence.jl")
+    export MVPWorkflowPersistence # Export the module
 end # module Infrastructure
 
 # --- Web Module (API) ---
